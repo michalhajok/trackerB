@@ -5,46 +5,13 @@ const mongoose = require("mongoose");
  */
 const dbConfig = {
   development: {
-    uri:
-      process.env.MONGODB_URI ||
-      "mongodb+srv://hajokmichal_db_user:gQDD930AR1sC1W0S@cluster0.hbxccjh.mongodb.net/tracker",
-    options: {
-      // useNewUrlParser: true,
-      // useUnifiedTopology: true,
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      // bufferMaxEntries: 0,
-      // bufferCommands: false,
-    },
+    uri: process.env.MONGODB_URI,
   },
   test: {
-    uri:
-      process.env.MONGODB_TEST_URI ||
-      "mongodb+srv://hajokmichal_db_user:gQDD930AR1sC1W0S@cluster0.hbxccjh.mongodb.net/tracker",
-    options: {
-      // useNewUrlParser: true,
-      // useUnifiedTopology: true,
-      maxPoolSize: 5,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-    },
+    uri: process.env.MONGODB_URI,
   },
   production: {
     uri: process.env.MONGODB_URI,
-    options: {
-      // useNewUrlParser: true,
-      // useUnifiedTopology: true,
-      maxPoolSize: 20,
-      minPoolSize: 5,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      maxIdleTimeMS: 30000,
-      // bufferMaxEntries: 0,
-      // bufferCommands: false,
-      retryWrites: true,
-      w: "majority",
-    },
   },
 };
 

@@ -104,7 +104,7 @@ const register = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Register error:", error);
+    console.log("Register error:", error);
 
     // Handle MongoDB duplicate key error
     if (error.code === 11000) {
@@ -201,7 +201,7 @@ const login = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Login error:", error);
+    console.log("Login error:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error during login",
