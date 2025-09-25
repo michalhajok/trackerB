@@ -3,9 +3,9 @@ const { validationResult } = require("express-validator");
 const mongoose = require("mongoose");
 
 /**
- * @desc    Get all cash operations for user
- * @route   GET /api/cash-operations
- * @access  Private
+ * @desc Get all cash operations for user
+ * @route GET /api/cash-operations
+ * @access Private
  */
 const getCashOperations = async (req, res) => {
   try {
@@ -14,54 +14,37 @@ const getCashOperations = async (req, res) => {
       type,
       currency,
       symbol,
-      status = "completed",
-      dateFrom,
-      dateTo,
-      page = 1,
-      limit = 50,
-      sortBy = "time",
-      sortOrder = "desc",
-    } = req.query;
-
-    const options = {
-      type,
-      currency,
-      symbol,
       status,
       dateFrom,
       dateTo,
-      sort: { [sortBy]: sortOrder === "desc" ? -1 : 1 },
-      limit: parseInt(limit),
-    };
-
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+      page = 1,
+      limit = 20,
+      sortBy = "time",
+      sortOrder = "desc",
+    } = req.query;
 
     // Build query
     const query = { userId };
     if (type) query.type = type;
     if (currency) query.currency = currency;
-    if (symbol) query.symbol = new RegExp(symbol, "i");
+    if (symbol) query.symbol = symbol.toUpperCase();
     if (status) query.status = status;
 
-    // Date range filter
     if (dateFrom || dateTo) {
       query.time = {};
       if (dateFrom) query.time.$gte = new Date(dateFrom);
       if (dateTo) query.time.$lte = new Date(dateTo);
     }
 
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
+
     // Execute queries
     const [operations, total] = await Promise.all([
-      CashOperation.find(query)
-        .sort(options.sort)
-        .skip(skip)
-        .limit(parseInt(limit)),
+      CashOperation.find(query).sort(sort).skip(skip).limit(parseInt(limit)),
       CashOperation.countDocuments(query),
     ]);
-
-    // Calculate balance
-    const balance = await CashOperation.calculateBalance(userId, currency);
 
     res.json({
       success: true,
@@ -73,10 +56,6 @@ const getCashOperations = async (req, res) => {
           total,
           limit: parseInt(limit),
         },
-        balance:
-          typeof balance === "object"
-            ? balance
-            : { [currency || "total"]: balance },
       },
     });
   } catch (error) {
@@ -90,16 +69,15 @@ const getCashOperations = async (req, res) => {
 };
 
 /**
- * @desc    Get single cash operation by ID
- * @route   GET /api/cash-operations/:id
- * @access  Private
+ * @desc Get single cash operation by ID
+ * @route GET /api/cash-operations/:id
+ * @access Private
  */
 const getCashOperation = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
-    // Validate ObjectId
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -133,13 +111,12 @@ const getCashOperation = async (req, res) => {
 };
 
 /**
- * @desc    Create new cash operation
- * @route   POST /api/cash-operations
- * @access  Private
+ * @desc Create new cash operation
+ * @route POST /api/cash-operations
+ * @access Private
  */
 const createCashOperation = async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -157,27 +134,21 @@ const createCashOperation = async (req, res) => {
       comment,
       symbol,
       time,
-      details = {},
       notes,
-      tags,
+      tags = [],
       taxInfo = {},
     } = req.body;
 
-    // Generate unique operation ID
-    const operationId = Date.now() + Math.floor(Math.random() * 1000);
-
     const operation = new CashOperation({
       userId,
-      operationId,
       type,
-      time: time ? new Date(time) : new Date(),
       amount: parseFloat(amount),
       currency,
       comment: comment.trim(),
       symbol: symbol ? symbol.toUpperCase() : undefined,
-      details,
+      time: time ? new Date(time) : new Date(),
       notes: notes ? notes.trim() : undefined,
-      tags: tags ? tags.map((tag) => tag.trim()) : [],
+      tags,
       taxInfo: {
         taxable: taxInfo.taxable || false,
         taxRate: taxInfo.taxRate || 0,
@@ -187,28 +158,15 @@ const createCashOperation = async (req, res) => {
 
     await operation.save();
 
-    // Calculate new balance
-    const balance = await CashOperation.calculateBalance(userId, currency);
-
     res.status(201).json({
       success: true,
       message: "Cash operation created successfully",
       data: {
         operation,
-        balance: { [currency]: balance },
       },
     });
   } catch (error) {
     console.error("Create cash operation error:", error);
-
-    // Handle duplicate operation ID
-    if (error.code === 11000 && error.keyPattern?.operationId) {
-      return res.status(409).json({
-        success: false,
-        message: "Operation ID already exists. Please try again.",
-      });
-    }
-
     res.status(500).json({
       success: false,
       message: "Error creating cash operation",
@@ -218,13 +176,12 @@ const createCashOperation = async (req, res) => {
 };
 
 /**
- * @desc    Update cash operation
- * @route   PUT /api/cash-operations/:id
- * @access  Private
+ * @desc Update cash operation
+ * @route PUT /api/cash-operations/:id
+ * @access Private
  */
 const updateCashOperation = async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -237,7 +194,6 @@ const updateCashOperation = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
 
-    // Validate ObjectId
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -246,37 +202,20 @@ const updateCashOperation = async (req, res) => {
     }
 
     const updateData = { ...req.body };
+    delete updateData.userId; // Prevent userId modification
 
-    // Remove fields that shouldn't be updated directly
-    delete updateData.userId;
-    delete updateData.operationId;
-    delete updateData.createdAt;
-    delete updateData.updatedAt;
-
-    // Uppercase symbol if provided
-    if (updateData.symbol) {
-      updateData.symbol = updateData.symbol.toUpperCase();
-    }
-
-    // Trim comment and notes
     if (updateData.comment) {
       updateData.comment = updateData.comment.trim();
     }
+
     if (updateData.notes) {
       updateData.notes = updateData.notes.trim();
     }
 
-    // Trim tags if provided
-    if (updateData.tags) {
-      updateData.tags = updateData.tags.map((tag) => tag.trim());
+    if (updateData.symbol) {
+      updateData.symbol = updateData.symbol.toUpperCase();
     }
 
-    // Parse amount if provided
-    if (updateData.amount) {
-      updateData.amount = parseFloat(updateData.amount);
-    }
-
-    // Parse time if provided
     if (updateData.time) {
       updateData.time = new Date(updateData.time);
     }
@@ -312,16 +251,15 @@ const updateCashOperation = async (req, res) => {
 };
 
 /**
- * @desc    Delete cash operation
- * @route   DELETE /api/cash-operations/:id
- * @access  Private
+ * @desc Delete cash operation
+ * @route DELETE /api/cash-operations/:id
+ * @access Private
  */
 const deleteCashOperation = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
-    // Validate ObjectId
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -344,9 +282,9 @@ const deleteCashOperation = async (req, res) => {
       data: {
         deletedOperation: {
           id: operation._id,
-          operationId: operation.operationId,
           type: operation.type,
           amount: operation.amount,
+          currency: operation.currency,
         },
       },
     });
@@ -361,82 +299,124 @@ const deleteCashOperation = async (req, res) => {
 };
 
 /**
- * @desc    Get cash balance by currency
- * @route   GET /api/cash-operations/balance
- * @access  Private
+ * @desc Get cash balance by currency
+ * @route GET /api/cash-operations/balance
+ * @access Private
  */
 const getBalance = async (req, res) => {
   try {
     const userId = req.user.id;
     const { currency, upToDate } = req.query;
 
-    const balance = await CashOperation.calculateBalance(
-      userId,
-      currency,
-      upToDate
-    );
+    const query = { userId, status: "completed" };
+    if (currency) query.currency = currency;
+    if (upToDate) query.time = { $lte: new Date(upToDate) };
+
+    const pipeline = [
+      { $match: query },
+      {
+        $group: {
+          _id: "$currency",
+          balance: {
+            $sum: {
+              $cond: [
+                {
+                  $in: ["$type", ["deposit", "dividend", "interest", "bonus"]],
+                },
+                "$amount",
+                { $multiply: ["$amount", -1] },
+              ],
+            },
+          },
+          totalDeposits: {
+            $sum: {
+              $cond: [
+                {
+                  $in: ["$type", ["deposit", "dividend", "interest", "bonus"]],
+                },
+                "$amount",
+                0,
+              ],
+            },
+          },
+          totalWithdrawals: {
+            $sum: {
+              $cond: [{ $in: ["$type", ["withdrawal", "fee"]] }, "$amount", 0],
+            },
+          },
+          operationCount: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ];
+
+    const balances = await CashOperation.aggregate(pipeline);
 
     res.json({
       success: true,
       data: {
-        balance,
-        currency: currency || "all",
-        upToDate: upToDate || "now",
+        balances,
+        summary: balances.reduce(
+          (acc, curr) => ({
+            totalBalance: acc.totalBalance + curr.balance,
+            totalDeposits: acc.totalDeposits + curr.totalDeposits,
+            totalWithdrawals: acc.totalWithdrawals + curr.totalWithdrawals,
+          }),
+          { totalBalance: 0, totalDeposits: 0, totalWithdrawals: 0 }
+        ),
       },
     });
   } catch (error) {
     console.error("Get balance error:", error);
     res.status(500).json({
       success: false,
-      message: "Error calculating balance",
+      message: "Error fetching balance",
       ...(process.env.NODE_ENV === "development" && { error: error.message }),
     });
   }
 };
 
 /**
- * @desc    Get cash flow summary
- * @route   GET /api/cash-operations/cash-flow
- * @access  Private
+ * @desc Get cash flow summary
+ * @route GET /api/cash-operations/cash-flow
+ * @access Private
  */
 const getCashFlowSummary = async (req, res) => {
   try {
     const userId = req.user.id;
     const { period = 30 } = req.query;
 
-    const summary = await CashOperation.getCashFlowSummary(
-      userId,
-      parseInt(period)
-    );
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(period));
 
-    // Calculate totals
-    const totals = summary.reduce(
-      (acc, item) => {
-        acc.totalAmount += item.totalAmount;
-        acc.totalCount += item.count;
-
-        if (item.totalAmount > 0) {
-          acc.totalInflow += item.totalAmount;
-        } else {
-          acc.totalOutflow += Math.abs(item.totalAmount);
-        }
-
-        return acc;
+    const pipeline = [
+      {
+        $match: {
+          userId: mongoose.Types.ObjectId(userId),
+          status: "completed",
+          time: { $gte: startDate },
+        },
       },
       {
-        totalAmount: 0,
-        totalCount: 0,
-        totalInflow: 0,
-        totalOutflow: 0,
-      }
-    );
+        $group: {
+          _id: {
+            date: { $dateToString: { format: "%Y-%m-%d", date: "$time" } },
+            type: "$type",
+          },
+          totalAmount: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { "_id.date": 1, "_id.type": 1 } },
+    ];
+
+    const cashFlow = await CashOperation.aggregate(pipeline);
 
     res.json({
       success: true,
       data: {
         period: parseInt(period),
-        summary,
-        totals,
+        cashFlow,
       },
     });
   } catch (error) {
@@ -450,45 +430,41 @@ const getCashFlowSummary = async (req, res) => {
 };
 
 /**
- * @desc    Get monthly summary
- * @route   GET /api/cash-operations/monthly/:year/:month
- * @access  Private
+ * @desc Get monthly summary
+ * @route GET /api/cash-operations/monthly/:year/:month
+ * @access Private
  */
 const getMonthlySummary = async (req, res) => {
   try {
     const userId = req.user.id;
     const { year, month } = req.params;
 
-    // Validate year and month
-    const targetYear = parseInt(year);
-    const targetMonth = parseInt(month);
+    const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+    const endDate = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59);
 
-    if (isNaN(targetYear) || targetYear < 2000 || targetYear > 2100) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid year",
-      });
-    }
-
-    if (isNaN(targetMonth) || targetMonth < 1 || targetMonth > 12) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid month (1-12)",
-      });
-    }
-
-    const summary = await CashOperation.getMonthlySummary(
+    const operations = await CashOperation.find({
       userId,
-      targetYear,
-      targetMonth
-    );
+      time: { $gte: startDate, $lte: endDate },
+      status: "completed",
+    }).sort({ time: -1 });
+
+    const summary = operations.reduce((acc, op) => {
+      if (!acc[op.type]) {
+        acc[op.type] = { total: 0, count: 0, operations: [] };
+      }
+      acc[op.type].total += op.amount;
+      acc[op.type].count += 1;
+      acc[op.type].operations.push(op);
+      return acc;
+    }, {});
 
     res.json({
       success: true,
       data: {
-        year: targetYear,
-        month: targetMonth,
+        year: parseInt(year),
+        month: parseInt(month),
         summary,
+        totalOperations: operations.length,
       },
     });
   } catch (error) {
@@ -502,46 +478,25 @@ const getMonthlySummary = async (req, res) => {
 };
 
 /**
- * @desc    Get operations by type
- * @route   GET /api/cash-operations/type/:type
- * @access  Private
+ * @desc Get operations by type
+ * @route GET /api/cash-operations/type/:type
+ * @access Private
  */
 const getOperationsByType = async (req, res) => {
   try {
-    const { type } = req.params;
     const userId = req.user.id;
+    const { type } = req.params;
     const {
       currency,
       dateFrom,
       dateTo,
-      limit = 20,
+      limit = 50,
       sortOrder = "desc",
     } = req.query;
-
-    const validTypes = [
-      "deposit",
-      "withdrawal",
-      "dividend",
-      "interest",
-      "fee",
-      "bonus",
-      "transfer",
-      "adjustment",
-    ];
-
-    if (!validTypes.includes(type)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid operation type. Valid types: ${validTypes.join(
-          ", "
-        )}`,
-      });
-    }
 
     const query = { userId, type };
     if (currency) query.currency = currency;
 
-    // Date range filter
     if (dateFrom || dateTo) {
       query.time = {};
       if (dateFrom) query.time.$gte = new Date(dateFrom);
@@ -552,22 +507,22 @@ const getOperationsByType = async (req, res) => {
       .sort({ time: sortOrder === "desc" ? -1 : 1 })
       .limit(parseInt(limit));
 
-    // Calculate summary for this type
-    const summary = operations.reduce(
-      (acc, op) => {
-        acc.totalAmount += op.amount;
-        acc.count += 1;
-        return acc;
-      },
-      { totalAmount: 0, count: 0 }
-    );
+    const statistics = {
+      totalAmount: operations.reduce((sum, op) => sum + op.amount, 0),
+      count: operations.length,
+      averageAmount:
+        operations.length > 0
+          ? operations.reduce((sum, op) => sum + op.amount, 0) /
+            operations.length
+          : 0,
+    };
 
     res.json({
       success: true,
       data: {
         type,
         operations,
-        summary,
+        statistics,
       },
     });
   } catch (error) {

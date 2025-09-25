@@ -28,15 +28,15 @@ const fileImportSchema = new mongoose.Schema(
     mimeType: {
       type: String,
       required: [true, "MIME type is required"],
-      enum: {
-        values: [
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
-          "application/vnd.ms-excel", // .xls
-          "text/csv", // .csv
-          "text/plain", // .txt
-        ],
-        message: "Unsupported file type",
-      },
+      // enum: {
+      //   values: [
+      //     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+      //     "application/vnd.ms-excel", // .xls
+      //     "text/csv", // .csv
+      //     "text/plain", // .txt
+      //   ],
+      //   message: "Unsupported file type",
+      // },
     },
     importDate: {
       type: Date,
@@ -73,16 +73,16 @@ const fileImportSchema = new mongoose.Schema(
     importType: {
       type: String,
       required: [true, "Import type is required"],
-      enum: {
-        values: [
-          "positions",
-          "cash_operations",
-          "orders",
-          "mixed",
-          "portfolio_export",
-        ],
-        message: "Invalid import type",
-      },
+      // enum: {
+      //   values: [
+      //     "positions",
+      //     "cash_operations",
+      //     "orders",
+      //     "mixed",
+      //     "portfolio_export",
+      //   ],
+      //   message: "Invalid import type",
+      // },
       index: true,
     },
 

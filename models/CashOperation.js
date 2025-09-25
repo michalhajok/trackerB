@@ -406,4 +406,17 @@ cashOperationSchema.statics.getMonthlySummary = async function (
   return result;
 };
 
+// Statyczna metoda obliczająca bilans: sumuje depozyty, odejmuje wypłaty
+cashOperationSchema.statics.calculateBalance = async function (userId) {
+  const ops = await this.find({
+    userId,
+    type: { $in: ["deposit", "withdrawal", "dividend"] },
+  });
+  return ops.reduce((sum, op) => {
+    if (op.type === "deposit" || op.type === "dividend") return sum + op.amount;
+    if (op.type === "withdrawal") return sum - op.amount;
+    return sum;
+  }, 0);
+};
+
 module.exports = mongoose.model("CashOperation", cashOperationSchema);

@@ -6,7 +6,7 @@ const {
   getAllocation,
   getStatistics,
 } = require("../controllers/analyticsController");
-const { authMiddleware } = require("../middleware/auth");
+const authMiddleware = require("../middleware/auth");
 
 const router = express.Router();
 

@@ -45,6 +45,11 @@ const cashOperationsRoutes = require("./routes/cashOperations");
 const pendingOrdersRoutes = require("./routes/pendingOrders");
 const analyticsRoutes = require("./routes/analytics");
 const fileImportRoutes = require("./routes/fileImport");
+const notificationsRoutes = require("./routes/notifications");
+const watchlistsRoutes = require("./routes/watchlists");
+const marketDataRoutes = require("./routes/marketData");
+const reportsRoutes = require("./routes/reports");
+const auditLogsRoutes = require("./routes/auditLogs");
 
 // Configuration
 const PORT = process.env.PORT || 5000;
@@ -207,6 +212,11 @@ app.use("/api/cash-operations", cashOperationsRoutes);
 app.use("/api/pending-orders", pendingOrdersRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/import", fileImportRoutes);
+app.use("/api/notifications", notificationsRoutes);
+app.use("/api/watchlists", watchlistsRoutes);
+app.use("/api/market-data", marketDataRoutes);
+app.use("/api/reports", reportsRoutes);
+app.use("/api/audit-logs", auditLogsRoutes);
 
 /**
  * Health Check Endpoints

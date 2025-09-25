@@ -145,7 +145,6 @@ const login = async (req, res) => {
     const user = await User.findOne({ email: email.toLowerCase() }).select(
       "+password +refreshToken"
     );
-    console.log("user found:", user);
 
     if (!user) {
       return res.status(401).json({
