@@ -68,6 +68,30 @@ const userSchema = new mongoose.Schema(
           default: false,
         },
       },
+
+      portfolios: {
+        defaultCurrency: {
+          type: String,
+          enum: ["USD", "EUR", "PLN", "GBP"],
+          default: "PLN",
+        },
+
+        showUnifiedView: {
+          type: Boolean,
+          default: true,
+        },
+
+        dashboardLayout: {
+          type: String,
+          enum: ["unified", "tabs", "cards"],
+          default: "unified",
+        },
+
+        currencyConversion: {
+          enabled: { type: Boolean, default: true },
+          provider: { type: String, default: "exchangerate-api" },
+        },
+      },
     },
   },
   {

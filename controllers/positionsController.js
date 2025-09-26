@@ -33,10 +33,19 @@ const extractUserIdFromToken = (req) => {
  * @route   GET /api/positions
  * @access  Private
  */
+// controllers/positionsController.js - AKTUALIZACJA
+// DODAJ na początek getPositions function:
+
 const getPositions = async (req, res) => {
   try {
-    // 🔧 FIXED: Extract userId from token instead of req.user.id
-    const userId = extractUserIdFromToken(req);
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors.array(),
+      });
+    }
 
     const {
       status,
@@ -46,89 +55,113 @@ const getPositions = async (req, res) => {
       limit = 50,
       sortBy = "openTime",
       sortOrder = "desc",
+      portfolioId, // NOWY PARAMETR
     } = req.query;
 
-    console.log(`🔍 Getting positions for user: ${userId}`);
-
     // Build query
-    const query = { userId: new mongoose.Types.ObjectId(userId) };
+    const query = { userId: req.user.id };
+
+    // NOWE: Filter by portfolio if provided
+    if (portfolioId) {
+      query.portfolioId = portfolioId;
+    }
+
     if (status) query.status = status;
     if (symbol) query.symbol = new RegExp(symbol, "i");
     if (type) query.type = type;
 
-    console.log(`🔍 Query:`, query);
+    // Calculate skip value for pagination
+    const skip = (page - 1) * limit;
 
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
+    // Build sort
+    const sort = {};
+    sort[sortBy] = sortOrder === "desc" ? -1 : 1;
 
-    // Execute query with pagination
-    const [positions, total] = await Promise.all([
-      Position.find(query).sort(sort).skip(skip).limit(parseInt(limit)),
+    // Execute query with population
+    const [positions, totalCount] = await Promise.all([
+      Position.find(query)
+        .populate("portfolioId", "name broker currency") // NOWE: Populate portfolio info
+        .sort(sort)
+        .skip(skip)
+        .limit(parseInt(limit)),
       Position.countDocuments(query),
     ]);
 
-    console.log(`✅ Found ${positions.length} positions out of ${total} total`);
-
-    // Calculate totals (with fallback if calculateTotalPL doesn't exist)
-    let totals;
-    try {
-      totals = await Position.calculateTotalPL(userId, status);
-    } catch (calcError) {
-      console.warn("⚠️ calculateTotalPL method not available, using fallback");
-      // Fallback calculation
-      const allPositions = await Position.find({
-        userId: new mongoose.Types.ObjectId(userId),
-      });
-      totals = {
-        totalGrossPL: allPositions.reduce(
-          (sum, pos) => sum + (pos.grossPL || 0),
-          0
-        ),
-        totalNetPL: allPositions.reduce(
-          (sum, pos) => sum + (pos.netPL || pos.grossPL || 0),
-          0
-        ),
-        totalValue: allPositions.reduce(
-          (sum, pos) => sum + (pos.purchaseValue || 0),
-          0
-        ),
-      };
-    }
-
-    console.log("📊 Totals:", totals);
+    // Calculate pagination info
+    const totalPages = Math.ceil(totalCount / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
 
     res.json({
       success: true,
+      message: "Positions retrieved successfully",
       data: {
         positions,
         pagination: {
-          current: parseInt(page),
-          pages: Math.ceil(total / parseInt(limit)),
-          total,
+          currentPage: parseInt(page),
+          totalPages,
+          totalCount,
           limit: parseInt(limit),
+          hasNextPage,
+          hasPrevPage,
         },
-        totals,
       },
     });
   } catch (error) {
     console.error("Get positions error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve positions",
+      error: error.message,
+    });
+  }
+};
 
-    // Handle auth errors
-    if (
-      error.message.includes("token") ||
-      error.message.includes("authentication")
-    ) {
-      return res.status(401).json({
+// DODAJ nową funkcję:
+const getPositionsByPortfolio = async (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const { status = "open" } = req.query;
+
+    // Verify portfolio ownership
+    const Portfolio = require("../models/Portfolio");
+    const portfolio = await Portfolio.findOne({
+      _id: portfolioId,
+      userId: req.user.id,
+    });
+
+    if (!portfolio) {
+      return res.status(404).json({
         success: false,
-        message: error.message,
+        message: "Portfolio not found",
       });
     }
 
+    const positions = await Position.find({
+      portfolioId: portfolioId,
+      status: status,
+    }).sort({ openTime: -1 });
+
+    res.json({
+      success: true,
+      message: "Portfolio positions retrieved successfully",
+      data: {
+        portfolio: {
+          id: portfolio._id,
+          name: portfolio.name,
+          broker: portfolio.broker,
+          currency: portfolio.currency,
+        },
+        positions,
+        totalCount: positions.length,
+      },
+    });
+  } catch (error) {
+    console.error("Get positions by portfolio error:", error);
     res.status(500).json({
       success: false,
-      message: "Error fetching positions",
-      ...(process.env.NODE_ENV === "development" && { error: error.message }),
+      message: "Failed to retrieve portfolio positions",
+      error: error.message,
     });
   }
 };

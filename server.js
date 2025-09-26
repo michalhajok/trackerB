@@ -50,6 +50,7 @@ const watchlistsRoutes = require("./routes/watchlists");
 const marketDataRoutes = require("./routes/marketData");
 const reportsRoutes = require("./routes/reports");
 const auditLogsRoutes = require("./routes/auditLogs");
+const portfoliosRoutes = require("./routes/portfolios");
 
 // Configuration
 const PORT = process.env.PORT || 5000;

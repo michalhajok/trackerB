@@ -2,12 +2,13 @@ const mongoose = require("mongoose");
 
 const positionSchema = new mongoose.Schema(
   {
-    userId: {
+    portfolioId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: [true, "User ID is required"],
+      ref: "Portfolio",
+      required: [true, "Portfolio ID is required"],
       index: true,
     },
+
     positionId: {
       type: Number,
       required: [true, "Position ID is required"],
@@ -166,6 +167,45 @@ const positionSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    brokerData: {
+      broker: {
+        type: String,
+        enum: ["XTB", "PKO", "BINANCE", "BYBIT", "ING", "MANUAL"],
+        required: true,
+        uppercase: true,
+      },
+
+      brokerPositionId: {
+        type: String, // Unique ID w broker system
+        sparse: true,
+      },
+
+      brokerSymbol: {
+        type: String, // Może się różnić od normalized symbol
+        required: true,
+      },
+
+      brokerAccountId: {
+        type: String, // Account ID w broker system
+        required: true,
+      },
+
+      originalData: {
+        type: Object, // Raw data from broker API
+        select: false,
+      },
+
+      lastSyncAt: {
+        type: Date,
+        default: Date.now,
+      },
+
+      syncStatus: {
+        type: String,
+        enum: ["synced", "pending", "error"],
+        default: "synced",
+      },
+    },
   },
   {
     timestamps: true,
@@ -181,10 +221,29 @@ const positionSchema = new mongoose.Schema(
 );
 
 // Compound indexes for better performance
-positionSchema.index({ userId: 1, status: 1 });
-positionSchema.index({ userId: 1, symbol: 1 });
-positionSchema.index({ userId: 1, openTime: -1 });
-positionSchema.index({ userId: 1, closeTime: -1 });
+positionSchema.index({ portfolioId: 1, status: 1 });
+positionSchema.index({ portfolioId: 1, symbol: 1 });
+positionSchema.index({ userId: 1, portfolioId: 1 }); // Backward compatibility
+
+positionSchema.post("save", async function () {
+  if (this.portfolioId) {
+    const Portfolio = mongoose.model("Portfolio");
+    const portfolio = await Portfolio.findById(this.portfolioId);
+    if (portfolio) {
+      await portfolio.updateStats();
+    }
+  }
+});
+
+positionSchema.post("remove", async function () {
+  if (this.portfolioId) {
+    const Portfolio = mongoose.model("Portfolio");
+    const portfolio = await Portfolio.findById(this.portfolioId);
+    if (portfolio) {
+      await portfolio.updateStats();
+    }
+  }
+});
 
 // Pre-save middleware to calculate derived values
 positionSchema.pre("save", function (next) {
