@@ -14,6 +14,12 @@ const pendingOrderSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
+    portfolioId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Portfolio",
+      required: [true, "Portfolio ID is required"],
+      index: true,
+    },
     symbol: {
       type: String,
       required: [true, "Symbol is required"],

@@ -218,6 +218,7 @@ app.use("/api/watchlists", watchlistsRoutes);
 app.use("/api/market-data", marketDataRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/audit-logs", auditLogsRoutes);
+app.use("/api/portfolios", portfoliosRoutes);
 
 /**
  * Health Check Endpoints

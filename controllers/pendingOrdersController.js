@@ -1,5 +1,6 @@
 const PendingOrder = require("../models/PendingOrder");
 const Position = require("../models/Position");
+const Portfolio = require("../models/Portfolio");
 const { validationResult } = require("express-validator");
 const mongoose = require("mongoose");
 
@@ -618,6 +619,19 @@ const cleanupExpiredOrders = async (req, res) => {
   }
 };
 
+const getPendingOrdersByPortfolio = async (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const orders = await PendingOrder.find({
+      portfolioId,
+      status: "pending",
+    }).sort({ createdAt: -1 });
+    res.json({ success: true, data: { orders } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   getPendingOrders,
   getPendingOrder,
@@ -629,4 +643,5 @@ module.exports = {
   getActiveOrders,
   getOrdersBySymbol,
   cleanupExpiredOrders,
+  getPendingOrdersByPortfolio,
 };

@@ -1,4 +1,5 @@
 const MarketData = require("../models/MarketData");
+const Portfolio = require("../models/Portfolio");
 const { validationResult } = require("express-validator");
 const mongoose = require("mongoose");
 

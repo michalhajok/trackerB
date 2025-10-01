@@ -871,4 +871,5 @@ module.exports = {
   deletePosition,
   getPositionsBySymbol,
   getPortfolioSummary,
+  getPositionsByPortfolio,
 };

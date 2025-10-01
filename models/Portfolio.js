@@ -7,13 +7,13 @@ const portfolioSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      // required: true,
       index: true,
     },
 
     name: {
       type: String,
-      required: [true, "Portfolio name is required"],
+      // required: [true, "Portfolio name is required"],
       trim: true,
       minlength: [2, "Portfolio name must be at least 2 characters"],
       maxlength: [100, "Portfolio name cannot exceed 100 characters"],
@@ -28,7 +28,7 @@ const portfolioSchema = new mongoose.Schema(
     // Broker Configuration
     broker: {
       type: String,
-      required: [true, "Broker is required"],
+      // required: [true, "Broker is required"],
       enum: ["XTB", "PKO", "BINANCE", "BYBIT", "ING", "MANUAL"],
       uppercase: true,
     },
@@ -36,7 +36,7 @@ const portfolioSchema = new mongoose.Schema(
     brokerConfig: {
       accountId: {
         type: String,
-        required: [true, "Broker account ID is required"],
+        // required: [false, "Broker account ID is required"],
       },
 
       accountType: {

@@ -9,11 +9,21 @@ const {
   // deletePortfolio,
   syncPortfolio,
   getPortfolioStats,
+  importPortfolio,
   // getPortfolioPositions,
   // clonePortfolio,
   // getPortfolioPerformance,
 } = require("../controllers/portfoliosController");
 const authMiddleware = require("../middleware/auth");
+
+const analyticsController = require("../controllers/analyticsController");
+const cashOperationsController = require("../controllers/cashOperationsController");
+const pendingOrdersController = require("../controllers/pendingOrdersController");
+const positionsController = require("../controllers/positionsController");
+const watchlistController = require("../controllers/watchlistController");
+// const marketDataController = require("../controllers/marketDataController");
+
+const upload = require("../middleware/upload");
 
 const router = express.Router();
 
@@ -165,6 +175,8 @@ router.post(
   syncPortfolio
 );
 
+router.post("/:id/import", upload.single("file"), importPortfolio);
+
 /**
  * @route   POST /api/portfolios/:id/clone
  * @desc    Clone portfolio (for templating)
@@ -191,6 +203,31 @@ router.post(
 //   "/:id",
 //   [param("id").isMongoId().withMessage("Invalid portfolio ID")],
 //   deletePortfolio
+// );
+
+router.get(
+  "/:portfolioId/analytics",
+  analyticsController.getAnalyticsByPortfolio
+);
+router.get(
+  "/:portfolioId/cash-operations",
+  cashOperationsController.getCashOperationsByPortfolio
+);
+router.get(
+  "/:portfolioId/pending-orders",
+  pendingOrdersController.getPendingOrdersByPortfolio
+);
+router.get(
+  "/:portfolioId/positions",
+  positionsController.getPositionsByPortfolio
+);
+router.get(
+  "/:portfolioId/watchlists",
+  watchlistController.getWatchlistsByPortfolio
+);
+// router.get(
+//   "/api/portfolios/:portfolioId/market-data",
+//   marketDataController.getMarketData
 // );
 
 module.exports = router;

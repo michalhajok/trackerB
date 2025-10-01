@@ -1,4 +1,5 @@
 const Watchlist = require("../models/Watchlist");
+const Portfolio = require("../models/Portfolio");
 const { validationResult } = require("express-validator");
 const mongoose = require("mongoose");
 
@@ -635,6 +636,18 @@ const getWatchlistStatistics = async (req, res) => {
   }
 };
 
+const getWatchlistsByPortfolio = async (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const lists = await Watchlist.find({ portfolioId })
+      .populate("items")
+      .sort({ name: 1 });
+    res.json({ success: true, data: { watchlists: lists } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   getWatchlists,
   getWatchlist,
@@ -648,4 +661,5 @@ module.exports = {
   updateMarketData,
   getPublicWatchlists,
   getWatchlistStatistics,
+  getWatchlistsByPortfolio,
 };

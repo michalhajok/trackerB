@@ -1,6 +1,7 @@
 const Position = require("../models/Position");
 const CashOperation = require("../models/CashOperation");
 const PendingOrder = require("../models/PendingOrder");
+const Portfolio = require("../models/Portfolio");
 const mongoose = require("mongoose");
 
 /**
@@ -843,9 +844,84 @@ const calculateTradingFrequency = (positions) => {
   return daysDiff > 0 ? (positions.length / daysDiff) * 30 : 0; // trades per month
 };
 
+/**
+ * @desc    Get analytics by portfolio
+ * @route   GET /api/portfolios/:portfolioId/analytics
+ * @access  Private
+ */
+const getAnalyticsByPortfolio = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { portfolioId } = req.params;
+
+    // Verify portfolio ownership
+    const portfolio = await Portfolio.findOne({ _id: portfolioId, userId });
+    if (!portfolio) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Portfolio not found" });
+    }
+
+    // Fetch open positions for this portfolio
+    const openPositions = await Position.find({
+      userId,
+      portfolioId,
+      status: "open",
+    });
+
+    // Calculate cash balance scoped to portfolio
+    const cashBalance = await CashOperation.calculateBalance(
+      userId,
+      portfolioId
+    );
+
+    // Calculate portfolio value scoped to portfolio
+    const portfolioValue = await Position.calculatePortfolioValue(
+      userId,
+      portfolioId
+    );
+
+    // Build response
+    res.json({
+      success: true,
+      data: {
+        portfolio: {
+          id: portfolio._id,
+          name: portfolio.name,
+          totalValue: portfolioValue,
+          totalCash: cashBalance,
+        },
+        positions: openPositions.map((pos) => ({
+          id: pos._id,
+          symbol: pos.symbol,
+          type: pos.type,
+          volume: pos.volume,
+          openPrice: pos.openPrice,
+          currentPrice: pos.currentPrice,
+          grossPL: pos.grossPL,
+          status: pos.status,
+          openTime: pos.openTime,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("getAnalyticsByPortfolio error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching portfolio analytics",
+      ...(process.env.NODE_ENV === "development" && { error: error.message }),
+    });
+  }
+};
+
+module.exports = {
+  getAnalyticsByPortfolio,
+};
+
 module.exports = {
   getDashboard,
   getPerformance,
   getAllocation,
   getStatistics,
+  getAnalyticsByPortfolio,
 };

@@ -1,3 +1,4 @@
+const Portfolio = require("../models/Portfolio");
 const CashOperation = require("../models/CashOperation");
 const { validationResult } = require("express-validator");
 const mongoose = require("mongoose");
@@ -535,6 +536,19 @@ const getOperationsByType = async (req, res) => {
   }
 };
 
+const getCashOperationsByPortfolio = async (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const ops = await CashOperation.find({
+      portfolioId,
+      status: "completed",
+    }).sort({ time: -1 });
+    res.json({ success: true, data: { operations: ops } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   getCashOperations,
   getCashOperation,
@@ -545,4 +559,5 @@ module.exports = {
   getCashFlowSummary,
   getMonthlySummary,
   getOperationsByType,
+  getCashOperationsByPortfolio,
 };

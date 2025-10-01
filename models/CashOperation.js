@@ -14,6 +14,12 @@ const cashOperationSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
+    portfolioId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Portfolio",
+      required: [true, "Portfolio ID is required"],
+      index: true,
+    },
     type: {
       type: String,
       required: [true, "Operation type is required"],
@@ -27,6 +33,14 @@ const cashOperationSchema = new mongoose.Schema(
           "bonus",
           "transfer",
           "adjustment",
+          "tax", // ogólny podatek
+          "withholding_tax", // podatek u źródła
+          "stock_purchase", // zakup akcji
+          "stock_sale", // sprzedaż akcji
+          "close_trade", // zamknięcie pozycji
+          "fractional_shares", // akcje ułamkowe
+          "correction", // korekty
+          "subaccount_transfer", // transfer między kontami
         ],
         message: "Invalid operation type",
       },
