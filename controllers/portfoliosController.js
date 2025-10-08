@@ -457,6 +457,17 @@ const importPortfolio = async (req, res) => {
   }
 };
 
+function excelDateToJSDate(serial) {
+  // Początek w Excelu (1900-01-01) - JS liczy od 1970
+  if (serial === undefined || serial === null || serial === "") return null;
+  const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+  const days = Math.floor(serial);
+  const msPerDay = 24 * 60 * 60 * 1000;
+
+  // Dodajemy dni i ułamkowe części (godzinę)
+  return new Date(excelEpoch.getTime() + serial * msPerDay);
+}
+
 /**
  * Background processing of uploaded file
  */
@@ -634,12 +645,8 @@ async function processPositionsSheet(data, userId, portfolioId, fileImportId) {
         const type = row[idx("type")]?.toString().trim().toUpperCase() || "BUY";
         const volume = parseFloat(row[idx("volume")]) || 0;
         const openPrice = parseFloat(row[idx("open price")]) || 0;
-        const openTime = row[idx("open time")]
-          ? new Date(row[idx("open time")])
-          : new Date();
-        const closeTime = row[idx("close time")]
-          ? new Date(row[idx("close time")])
-          : null;
+        const openTime = excelDateToJSDate(row[idx("open time")]);
+        const closeTime = excelDateToJSDate(row[idx("close time")]);
         const closePrice = parseFloat(row[idx("close price")]) || null;
         const purchaseValue =
           parseFloat(row[idx("purchase value")]) || volume * openPrice;
@@ -770,11 +777,11 @@ async function processCashOperationsSheet(
     // For interest ensure positive
     if (type === "interest") amount = Math.abs(amount);
 
-    const timeCell = row[idx("time")] || row[idx("date")];
-    const time = timeCell ? new Date(timeCell) : new Date();
+    const time = excelDateToJSDate(row[idx("time")]);
+
     const comment = row[idx("comment")]?.toString().trim() || "Imported";
     const currency = row[idx("currency")] || portfolio.currency || "PLN";
-    const operationId = Date.now() * 1000 + i;
+    const operationId = row[idx("id")];
 
     // Symbol only required for dividend; truncate to 10 chars
     let symbol = row[idx("symbol")]?.toString().trim().toUpperCase();
@@ -846,9 +853,7 @@ async function processPendingOrdersSheet(
         const side = sideRaw.includes("SELL") ? "SELL" : "BUY";
         const volume = parseFloat(row[idx("volume")]) || 0;
         const price = parseFloat(row[idx("price")]) || 0;
-        const createdAt = row[idx("date")]
-          ? new Date(row[idx("date")])
-          : new Date();
+        const createdAt = excelDateToJSDate(row[idx("date")]);
         const comment = row[idx("comment")]?.toString().trim() || "Imported";
 
         if (!symbol || volume <= 0 || price <= 0) {
