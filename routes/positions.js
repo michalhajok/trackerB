@@ -2,14 +2,10 @@ const express = require("express");
 const { body, query, param } = require("express-validator");
 const {
   getPositions,
-  getPosition,
   createPosition,
   updatePosition,
-  updateMarketPrice,
   closePosition,
   deletePosition,
-  getPositionsBySymbol,
-  getPortfolioSummary,
 } = require("../controllers/positionsController");
 const authMiddleware = require("../middleware/auth");
 
@@ -63,45 +59,6 @@ router.get(
       .withMessage("Sort order must be asc or desc"),
   ],
   getPositions
-);
-
-/**
- * @route   GET /api/positions/portfolio/summary
- * @desc    Get portfolio summary
- * @access  Private
- */
-router.get("/portfolio/summary", getPortfolioSummary);
-
-/**
- * @route   GET /api/positions/symbol/:symbol
- * @desc    Get positions by symbol
- * @access  Private
- */
-router.get(
-  "/symbol/:symbol",
-  [
-    param("symbol")
-      .isLength({ min: 1, max: 10 })
-      .withMessage("Symbol must be between 1 and 10 characters")
-      .matches(/^[A-Za-z0-9\.]+$/)
-      .withMessage("Symbol can only contain letters, numbers, and dots"),
-    query("status")
-      .optional()
-      .isIn(["open", "closed"])
-      .withMessage("Status must be either open or closed"),
-  ],
-  getPositionsBySymbol
-);
-
-/**
- * @route   GET /api/positions/:id
- * @desc    Get single position by ID
- * @access  Private
- */
-router.get(
-  "/:id",
-  [param("id").isMongoId().withMessage("Invalid position ID")],
-  getPosition
 );
 
 /**
@@ -250,22 +207,6 @@ router.put(
       .withMessage("Each tag must be between 1 and 20 characters"),
   ],
   updatePosition
-);
-
-/**
- * @route   PUT /api/positions/:id/market-price
- * @desc    Update market price for position
- * @access  Private
- */
-router.put(
-  "/:id/market-price",
-  [
-    param("id").isMongoId().withMessage("Invalid position ID"),
-    body("marketPrice")
-      .isFloat({ min: 0.01 })
-      .withMessage("Market price must be a positive number"),
-  ],
-  updateMarketPrice
 );
 
 /**

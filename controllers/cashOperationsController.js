@@ -4,7 +4,7 @@ const { validationResult } = require("express-validator");
 const mongoose = require("mongoose");
 
 /**
- * @desc Get all cash operations for user
+ * @desc Get all cash operations for user with analytics
  * @route GET /api/cash-operations
  * @access Private
  */
@@ -12,100 +12,143 @@ const getCashOperations = async (req, res) => {
   try {
     const userId = req.user.id;
     const {
+      portfolioId,
       type,
       currency,
-      symbol,
-      status,
+      status = "completed",
       dateFrom,
       dateTo,
+      period = 30,
       page = 1,
       limit = 20,
       sortBy = "time",
       sortOrder = "desc",
+      includeStats = true,
     } = req.query;
 
     // Build query
     const query = { userId };
+    if (portfolioId) query.portfolioId = portfolioId;
     if (type) query.type = type;
     if (currency) query.currency = currency;
-    if (symbol) query.symbol = symbol.toUpperCase();
     if (status) query.status = status;
 
     if (dateFrom || dateTo) {
       query.time = {};
       if (dateFrom) query.time.$gte = new Date(dateFrom);
       if (dateTo) query.time.$lte = new Date(dateTo);
+    } else if (period) {
+      // Default period filter
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(period));
+      query.time = { $gte: startDate };
     }
 
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
 
-    // Execute queries
+    // Execute main query
     const [operations, total] = await Promise.all([
-      CashOperation.find(query).sort(sort).skip(skip).limit(parseInt(limit)),
+      CashOperation.find(query)
+        .populate("portfolioId", "name broker currency")
+        .sort(sort)
+        .skip(skip)
+        .limit(parseInt(limit)),
       CashOperation.countDocuments(query),
     ]);
 
-    res.json({
-      success: true,
-      data: {
-        operations,
-        pagination: {
-          current: parseInt(page),
-          pages: Math.ceil(total / parseInt(limit)),
-          total,
-          limit: parseInt(limit),
-        },
+    let responseData = {
+      operations,
+      pagination: {
+        current: parseInt(page),
+        pages: Math.ceil(total / parseInt(limit)),
+        total,
+        limit: parseInt(limit),
+        hasNext: page < Math.ceil(total / parseInt(limit)),
+        hasPrev: page > 1,
       },
+    };
+
+    // Include analytics if requested
+    if (includeStats === "true" || includeStats === true) {
+      const statsQuery = { ...query };
+      delete statsQuery.time; // Get all-time stats
+
+      const allOperations = await CashOperation.find(statsQuery);
+
+      // Calculate balance by currency
+      const balanceByType = {
+        income: ["deposit", "dividend", "interest", "bonus"],
+        expense: ["withdrawal", "fee", "tax"],
+      };
+
+      const analytics = allOperations.reduce((acc, op) => {
+        const currency = op.currency || "PLN";
+        if (!acc[currency]) {
+          acc[currency] = {
+            balance: 0,
+            totalIncome: 0,
+            totalExpense: 0,
+            operationsCount: 0,
+          };
+        }
+
+        const isIncome = balanceByType.income.includes(op.type);
+        const amount = Math.abs(op.amount);
+
+        if (isIncome) {
+          acc[currency].balance += amount;
+          acc[currency].totalIncome += amount;
+        } else {
+          acc[currency].balance -= amount;
+          acc[currency].totalExpense += amount;
+        }
+
+        acc[currency].operationsCount++;
+        return acc;
+      }, {});
+
+      // Calculate period summary for filtered operations
+      const periodSummary = operations.reduce(
+        (acc, op) => {
+          const isIncome = balanceByType.income.includes(op.type);
+          const amount = Math.abs(op.amount);
+
+          if (isIncome) {
+            acc.periodIncome += amount;
+          } else {
+            acc.periodExpense += amount;
+          }
+          return acc;
+        },
+        { periodIncome: 0, periodExpense: 0 }
+      );
+
+      responseData.analytics = {
+        balanceByCurrenty: analytics,
+        periodSummary: {
+          ...periodSummary,
+          netCashFlow: periodSummary.periodIncome - periodSummary.periodExpense,
+          period: parseInt(period),
+        },
+        totalBalance: Object.values(analytics).reduce(
+          (sum, curr) => sum + curr.balance,
+          0
+        ),
+      };
+    }
+
+    return res.json({
+      success: true,
+      message: "Cash operations retrieved successfully",
+      data: responseData,
     });
   } catch (error) {
     console.error("Get cash operations error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Error fetching cash operations",
-      ...(process.env.NODE_ENV === "development" && { error: error.message }),
-    });
-  }
-};
-
-/**
- * @desc Get single cash operation by ID
- * @route GET /api/cash-operations/:id
- * @access Private
- */
-const getCashOperation = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.id;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid operation ID format",
-      });
-    }
-
-    const operation = await CashOperation.findOne({ _id: id, userId });
-
-    if (!operation) {
-      return res.status(404).json({
-        success: false,
-        message: "Cash operation not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        operation,
-      },
-    });
-  } catch (error) {
-    console.error("Get cash operation error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching cash operation",
       ...(process.env.NODE_ENV === "development" && { error: error.message }),
     });
   }
@@ -129,6 +172,7 @@ const createCashOperation = async (req, res) => {
 
     const userId = req.user.id;
     const {
+      portfolioId,
       type,
       amount,
       currency = "PLN",
@@ -137,19 +181,42 @@ const createCashOperation = async (req, res) => {
       time,
       notes,
       tags = [],
+      status = "completed",
       taxInfo = {},
     } = req.body;
 
+    // Validate portfolioId if provided
+    if (portfolioId) {
+      const portfolio = await Portfolio.findOne({ _id: portfolioId, userId });
+      if (!portfolio) {
+        return res.status(404).json({
+          success: false,
+          message: "Portfolio not found",
+        });
+      }
+    }
+
+    // Ensure amount is positive for income types, negative for expense types
+    const incomeTypes = ["deposit", "dividend", "interest", "bonus"];
+    const expenseTypes = ["withdrawal", "fee", "tax"];
+
+    let finalAmount = Math.abs(parseFloat(amount));
+    if (expenseTypes.includes(type)) {
+      finalAmount = -finalAmount; // Make expenses negative
+    }
+
     const operation = new CashOperation({
       userId,
+      portfolioId: portfolioId || null,
       type,
-      amount: parseFloat(amount),
-      currency,
+      amount: finalAmount,
+      currency: currency.toUpperCase(),
       comment: comment.trim(),
       symbol: symbol ? symbol.toUpperCase() : undefined,
       time: time ? new Date(time) : new Date(),
       notes: notes ? notes.trim() : undefined,
-      tags,
+      tags: tags.map((tag) => tag.trim()),
+      status,
       taxInfo: {
         taxable: taxInfo.taxable || false,
         taxRate: taxInfo.taxRate || 0,
@@ -159,16 +226,17 @@ const createCashOperation = async (req, res) => {
 
     await operation.save();
 
-    res.status(201).json({
+    // Populate portfolio info in response
+    await operation.populate("portfolioId", "name broker currency");
+
+    return res.status(201).json({
       success: true,
       message: "Cash operation created successfully",
-      data: {
-        operation,
-      },
+      data: { operation },
     });
   } catch (error) {
     console.error("Create cash operation error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Error creating cash operation",
       ...(process.env.NODE_ENV === "development" && { error: error.message }),
@@ -203,29 +271,36 @@ const updateCashOperation = async (req, res) => {
     }
 
     const updateData = { ...req.body };
-    delete updateData.userId; // Prevent userId modification
 
-    if (updateData.comment) {
-      updateData.comment = updateData.comment.trim();
-    }
+    // Remove fields that shouldn't be updated directly
+    delete updateData.userId;
+    delete updateData.createdAt;
 
-    if (updateData.notes) {
-      updateData.notes = updateData.notes.trim();
-    }
+    // Sanitize text fields
+    if (updateData.comment) updateData.comment = updateData.comment.trim();
+    if (updateData.notes) updateData.notes = updateData.notes.trim();
+    if (updateData.symbol) updateData.symbol = updateData.symbol.toUpperCase();
+    if (updateData.currency)
+      updateData.currency = updateData.currency.toUpperCase();
+    if (updateData.time) updateData.time = new Date(updateData.time);
+    if (updateData.tags)
+      updateData.tags = updateData.tags.map((tag) => tag.trim());
 
-    if (updateData.symbol) {
-      updateData.symbol = updateData.symbol.toUpperCase();
-    }
-
-    if (updateData.time) {
-      updateData.time = new Date(updateData.time);
+    // Handle amount sign correction based on type
+    if (updateData.amount && updateData.type) {
+      const expenseTypes = ["withdrawal", "fee", "tax"];
+      let finalAmount = Math.abs(parseFloat(updateData.amount));
+      if (expenseTypes.includes(updateData.type)) {
+        finalAmount = -finalAmount;
+      }
+      updateData.amount = finalAmount;
     }
 
     const operation = await CashOperation.findOneAndUpdate(
       { _id: id, userId },
       updateData,
       { new: true, runValidators: true }
-    );
+    ).populate("portfolioId", "name broker currency");
 
     if (!operation) {
       return res.status(404).json({
@@ -234,16 +309,14 @@ const updateCashOperation = async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: "Cash operation updated successfully",
-      data: {
-        operation,
-      },
+      data: { operation },
     });
   } catch (error) {
     console.error("Update cash operation error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Error updating cash operation",
       ...(process.env.NODE_ENV === "development" && { error: error.message }),
@@ -260,6 +333,7 @@ const deleteCashOperation = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
+    const { permanent = false } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -268,7 +342,23 @@ const deleteCashOperation = async (req, res) => {
       });
     }
 
-    const operation = await CashOperation.findOneAndDelete({ _id: id, userId });
+    let operation;
+
+    if (permanent === "true") {
+      // Hard delete
+      operation = await CashOperation.findOneAndDelete({ _id: id, userId });
+    } else {
+      // Soft delete - mark as cancelled
+      operation = await CashOperation.findOneAndUpdate(
+        { _id: id, userId },
+        {
+          status: "cancelled",
+          notes: (existing) =>
+            existing ? `${existing} [CANCELLED]` : "[CANCELLED]",
+        },
+        { new: true }
+      );
+    }
 
     if (!operation) {
       return res.status(404).json({
@@ -277,21 +367,25 @@ const deleteCashOperation = async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
-      message: "Cash operation deleted successfully",
+      message:
+        permanent === "true"
+          ? "Cash operation deleted permanently"
+          : "Cash operation cancelled successfully",
       data: {
         deletedOperation: {
           id: operation._id,
           type: operation.type,
           amount: operation.amount,
           currency: operation.currency,
+          status: operation.status,
         },
       },
     });
   } catch (error) {
     console.error("Delete cash operation error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Error deleting cash operation",
       ...(process.env.NODE_ENV === "development" && { error: error.message }),
@@ -299,265 +393,9 @@ const deleteCashOperation = async (req, res) => {
   }
 };
 
-/**
- * @desc Get cash balance by currency
- * @route GET /api/cash-operations/balance
- * @access Private
- */
-const getBalance = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { currency, upToDate } = req.query;
-
-    const query = { userId, status: "completed" };
-    if (currency) query.currency = currency;
-    if (upToDate) query.time = { $lte: new Date(upToDate) };
-
-    const pipeline = [
-      { $match: query },
-      {
-        $group: {
-          _id: "$currency",
-          balance: {
-            $sum: {
-              $cond: [
-                {
-                  $in: ["$type", ["deposit", "dividend", "interest", "bonus"]],
-                },
-                "$amount",
-                { $multiply: ["$amount", -1] },
-              ],
-            },
-          },
-          totalDeposits: {
-            $sum: {
-              $cond: [
-                {
-                  $in: ["$type", ["deposit", "dividend", "interest", "bonus"]],
-                },
-                "$amount",
-                0,
-              ],
-            },
-          },
-          totalWithdrawals: {
-            $sum: {
-              $cond: [{ $in: ["$type", ["withdrawal", "fee"]] }, "$amount", 0],
-            },
-          },
-          operationCount: { $sum: 1 },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ];
-
-    const balances = await CashOperation.aggregate(pipeline);
-
-    res.json({
-      success: true,
-      data: {
-        balances,
-        summary: balances.reduce(
-          (acc, curr) => ({
-            totalBalance: acc.totalBalance + curr.balance,
-            totalDeposits: acc.totalDeposits + curr.totalDeposits,
-            totalWithdrawals: acc.totalWithdrawals + curr.totalWithdrawals,
-          }),
-          { totalBalance: 0, totalDeposits: 0, totalWithdrawals: 0 }
-        ),
-      },
-    });
-  } catch (error) {
-    console.error("Get balance error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching balance",
-      ...(process.env.NODE_ENV === "development" && { error: error.message }),
-    });
-  }
-};
-
-/**
- * @desc Get cash flow summary
- * @route GET /api/cash-operations/cash-flow
- * @access Private
- */
-const getCashFlowSummary = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { period = 30 } = req.query;
-
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - parseInt(period));
-
-    const pipeline = [
-      {
-        $match: {
-          userId: mongoose.Types.ObjectId(userId),
-          status: "completed",
-          time: { $gte: startDate },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            date: { $dateToString: { format: "%Y-%m-%d", date: "$time" } },
-            type: "$type",
-          },
-          totalAmount: { $sum: "$amount" },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { "_id.date": 1, "_id.type": 1 } },
-    ];
-
-    const cashFlow = await CashOperation.aggregate(pipeline);
-
-    res.json({
-      success: true,
-      data: {
-        period: parseInt(period),
-        cashFlow,
-      },
-    });
-  } catch (error) {
-    console.error("Get cash flow summary error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching cash flow summary",
-      ...(process.env.NODE_ENV === "development" && { error: error.message }),
-    });
-  }
-};
-
-/**
- * @desc Get monthly summary
- * @route GET /api/cash-operations/monthly/:year/:month
- * @access Private
- */
-const getMonthlySummary = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { year, month } = req.params;
-
-    const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-    const endDate = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59);
-
-    const operations = await CashOperation.find({
-      userId,
-      time: { $gte: startDate, $lte: endDate },
-      status: "completed",
-    }).sort({ time: -1 });
-
-    const summary = operations.reduce((acc, op) => {
-      if (!acc[op.type]) {
-        acc[op.type] = { total: 0, count: 0, operations: [] };
-      }
-      acc[op.type].total += op.amount;
-      acc[op.type].count += 1;
-      acc[op.type].operations.push(op);
-      return acc;
-    }, {});
-
-    res.json({
-      success: true,
-      data: {
-        year: parseInt(year),
-        month: parseInt(month),
-        summary,
-        totalOperations: operations.length,
-      },
-    });
-  } catch (error) {
-    console.error("Get monthly summary error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching monthly summary",
-      ...(process.env.NODE_ENV === "development" && { error: error.message }),
-    });
-  }
-};
-
-/**
- * @desc Get operations by type
- * @route GET /api/cash-operations/type/:type
- * @access Private
- */
-const getOperationsByType = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { type } = req.params;
-    const {
-      currency,
-      dateFrom,
-      dateTo,
-      limit = 50,
-      sortOrder = "desc",
-    } = req.query;
-
-    const query = { userId, type };
-    if (currency) query.currency = currency;
-
-    if (dateFrom || dateTo) {
-      query.time = {};
-      if (dateFrom) query.time.$gte = new Date(dateFrom);
-      if (dateTo) query.time.$lte = new Date(dateTo);
-    }
-
-    const operations = await CashOperation.find(query)
-      .sort({ time: sortOrder === "desc" ? -1 : 1 })
-      .limit(parseInt(limit));
-
-    const statistics = {
-      totalAmount: operations.reduce((sum, op) => sum + op.amount, 0),
-      count: operations.length,
-      averageAmount:
-        operations.length > 0
-          ? operations.reduce((sum, op) => sum + op.amount, 0) /
-            operations.length
-          : 0,
-    };
-
-    res.json({
-      success: true,
-      data: {
-        type,
-        operations,
-        statistics,
-      },
-    });
-  } catch (error) {
-    console.error("Get operations by type error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching operations by type",
-      ...(process.env.NODE_ENV === "development" && { error: error.message }),
-    });
-  }
-};
-
-const getCashOperationsByPortfolio = async (req, res) => {
-  try {
-    const { portfolioId } = req.params;
-    const ops = await CashOperation.find({
-      portfolioId,
-      status: "completed",
-    }).sort({ time: -1 });
-    res.json({ success: true, data: { operations: ops } });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
 module.exports = {
   getCashOperations,
-  getCashOperation,
   createCashOperation,
   updateCashOperation,
   deleteCashOperation,
-  getBalance,
-  getCashFlowSummary,
-  getMonthlySummary,
-  getOperationsByType,
-  getCashOperationsByPortfolio,
 };

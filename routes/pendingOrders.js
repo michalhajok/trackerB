@@ -2,15 +2,9 @@ const express = require("express");
 const { body, query, param } = require("express-validator");
 const {
   getPendingOrders,
-  getPendingOrder,
   createPendingOrder,
-  updatePendingOrder,
   executePendingOrder,
   cancelPendingOrder,
-  deletePendingOrder,
-  getActiveOrders,
-  getOrdersBySymbol,
-  cleanupExpiredOrders,
 } = require("../controllers/pendingOrdersController");
 const authMiddleware = require("../middleware/auth");
 
@@ -68,52 +62,6 @@ router.get(
       .withMessage("Sort order must be asc or desc"),
   ],
   getPendingOrders
-);
-
-/**
- * @route   GET /api/pending-orders/active
- * @desc    Get active orders
- * @access  Private
- */
-router.get("/active", getActiveOrders);
-
-/**
- * @route   GET /api/pending-orders/symbol/:symbol
- * @desc    Get orders by symbol
- * @access  Private
- */
-router.get(
-  "/symbol/:symbol",
-  [
-    param("symbol")
-      .isLength({ min: 1, max: 10 })
-      .withMessage("Symbol must be between 1 and 10 characters")
-      .matches(/^[A-Za-z0-9\.]+$/)
-      .withMessage("Symbol can only contain letters, numbers, and dots"),
-    query("status")
-      .optional()
-      .isIn([
-        "pending",
-        "partial",
-        "executed",
-        "cancelled",
-        "expired",
-        "rejected",
-      ])
-      .withMessage("Invalid order status"),
-  ],
-  getOrdersBySymbol
-);
-
-/**
- * @route   GET /api/pending-orders/:id
- * @desc    Get single pending order by ID
- * @access  Private
- */
-router.get(
-  "/:id",
-  [param("id").isMongoId().withMessage("Invalid order ID")],
-  getPendingOrder
 );
 
 /**
@@ -238,83 +186,6 @@ router.post(
 );
 
 /**
- * @route   PUT /api/pending-orders/:id
- * @desc    Update pending order
- * @access  Private
- */
-router.put(
-  "/:id",
-  [
-    param("id").isMongoId().withMessage("Invalid order ID"),
-    body("symbol")
-      .optional()
-      .trim()
-      .isLength({ min: 1, max: 10 })
-      .withMessage("Symbol must be between 1 and 10 characters")
-      .matches(/^[A-Za-z0-9\.]+$/)
-      .withMessage("Symbol can only contain letters, numbers, and dots"),
-    body("name")
-      .optional()
-      .trim()
-      .isLength({ max: 100 })
-      .withMessage("Name cannot exceed 100 characters"),
-    body("type")
-      .optional()
-      .isIn(["market", "limit", "stop", "stop_limit", "trailing_stop"])
-      .withMessage("Invalid order type"),
-    body("side")
-      .optional()
-      .isIn(["buy", "sell"])
-      .withMessage("Side must be either buy or sell"),
-    body("volume")
-      .optional()
-      .isFloat({ min: 0.0001 })
-      .withMessage("Volume must be a positive number greater than 0"),
-    body("price")
-      .optional()
-      .isFloat({ min: 0.01 })
-      .withMessage("Price must be a positive number"),
-    body("stopPrice")
-      .optional()
-      .isFloat({ min: 0.01 })
-      .withMessage("Stop price must be a positive number"),
-    body("trailingAmount")
-      .optional()
-      .isFloat({ min: 0.01 })
-      .withMessage("Trailing amount must be a positive number"),
-    body("trailingPercent")
-      .optional()
-      .isFloat({ min: 0.01, max: 100 })
-      .withMessage("Trailing percent must be between 0.01 and 100"),
-    body("expiryTime")
-      .optional()
-      .isISO8601()
-      .withMessage("Expiry time must be a valid ISO date"),
-    body("currency")
-      .optional()
-      .isIn(["USD", "EUR", "PLN", "GBP"])
-      .withMessage("Currency must be one of: USD, EUR, PLN, GBP"),
-    body("exchange")
-      .optional()
-      .trim()
-      .isLength({ max: 50 })
-      .withMessage("Exchange name cannot exceed 50 characters"),
-    body("notes")
-      .optional()
-      .trim()
-      .isLength({ max: 500 })
-      .withMessage("Notes cannot exceed 500 characters"),
-    body("tags").optional().isArray().withMessage("Tags must be an array"),
-    body("tags.*")
-      .optional()
-      .trim()
-      .isLength({ min: 1, max: 20 })
-      .withMessage("Each tag must be between 1 and 20 characters"),
-  ],
-  updatePendingOrder
-);
-
-/**
  * @route   PUT /api/pending-orders/:id/execute
  * @desc    Execute pending order (full or partial)
  * @access  Private
@@ -363,24 +234,6 @@ router.put(
   ],
   cancelPendingOrder
 );
-
-/**
- * @route   DELETE /api/pending-orders/:id
- * @desc    Delete pending order
- * @access  Private
- */
-router.delete(
-  "/:id",
-  [param("id").isMongoId().withMessage("Invalid order ID")],
-  deletePendingOrder
-);
-
-/**
- * @route   POST /api/pending-orders/cleanup-expired
- * @desc    Cleanup expired orders (Admin only)
- * @access  Private
- */
-router.post("/cleanup-expired", cleanupExpiredOrders);
 
 /**
  * @route   GET /api/pending-orders/health

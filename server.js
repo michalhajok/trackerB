@@ -49,7 +49,6 @@ const notificationsRoutes = require("./routes/notifications");
 const watchlistsRoutes = require("./routes/watchlists");
 const marketDataRoutes = require("./routes/marketData");
 const reportsRoutes = require("./routes/reports");
-const auditLogsRoutes = require("./routes/auditLogs");
 const portfoliosRoutes = require("./routes/portfolios");
 
 // Configuration
@@ -217,7 +216,6 @@ app.use("/api/notifications", notificationsRoutes);
 app.use("/api/watchlists", watchlistsRoutes);
 app.use("/api/market-data", marketDataRoutes);
 app.use("/api/reports", reportsRoutes);
-app.use("/api/audit-logs", auditLogsRoutes);
 app.use("/api/portfolios", portfoliosRoutes);
 
 /**
